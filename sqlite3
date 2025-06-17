@@ -1,0 +1,39 @@
+import sqlite3
+
+# 데이터베이스 연결 (파일이 없으면 생성)
+conn = sqlite3.connect('student.db')
+cursor = conn.cursor()
+
+# 학생 테이블 생성
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS students (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    age INTEGER,
+    major TEXT
+)
+''')
+
+# 데이터 삽입 (중복 삽입 방지를 위해 먼저 삭제)
+cursor.execute('DELETE FROM students')
+
+students = [
+    ('Kim Minsoo', 20, 'Computer Science'),
+    ('Lee Jihye', 22, 'Mathematics'),
+    ('Park Chulsoo', 19, 'Physics')
+]
+
+cursor.executemany('INSERT INTO students (name, age, major) VALUES (?, ?, ?)', students)
+
+conn.commit()
+
+# 전체 학생 조회
+cursor.execute('SELECT * FROM students')
+rows = cursor.fetchall()
+
+for row in rows:
+    print(row)
+
+# 연결 종료
+cursor.close()
+conn.close()
