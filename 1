@@ -1,0 +1,128 @@
+import sqlite3
+
+conn = sqlite3.connect('complex_student.db')
+cursor = conn.cursor()
+
+# 외래키 제약조건 사용하려면 활성화
+cursor.execute('PRAGMA foreign_keys = ON;')
+
+# 1. 학생 테이블 생성 (제약조건 포함)
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS students (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    age INTEGER CHECK(age >= 0),
+    major TEXT,
+    enrollment_date TEXT DEFAULT (DATE('now'))
+)
+''')
+
+# 2. 과목 테이블 생성
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS courses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE
+)
+''')
+
+# 3. 학생별 수강과목 매핑 테이블 (외래키, 복합키)
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS enrollments (
+    student_id INTEGER,
+    course_id INTEGER,
+    grade TEXT CHECK(grade IN ('A', 'B', 'C', 'D', 'F', NULL)),
+    PRIMARY KEY (student_id, course_id),
+    FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+    FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
+)
+''')
+
+# 4. 인덱스 생성 (이름, 전공 검색 빠르게)
+cursor.execute('CREATE INDEX IF NOT EXISTS idx_students_name ON students(name);')
+cursor.execute('CREATE INDEX IF NOT EXISTS idx_students_major ON students(major);')
+
+# 5. 트랜잭션으로 데이터 삽입
+try:
+    cursor.execute('BEGIN TRANSACTION;')
+
+    # 학생 데이터 삽입
+    students = [
+        ('Kim Minsoo', 20, 'Computer Science'),
+        ('Lee Jihye', 22, 'Mathematics'),
+        ('Park Chulsoo', 19, 'Physics'),
+        ('Choi Yuna', 21, 'Chemistry')
+    ]
+    cursor.executemany('INSERT INTO students (name, age, major) VALUES (?, ?, ?)', students)
+
+    # 과목 데이터 삽입
+    courses = [
+        ('Data Structures',),
+        ('Calculus',),
+        ('Physics I',),
+        ('Organic Chemistry',)
+    ]
+    cursor.executemany('INSERT INTO courses (name) VALUES (?)', courses)
+
+    # 수강 데이터 삽입 (학생, 과목, 성적)
+    enrollments = [
+        (1, 1, 'A'),
+        (1, 2, 'B'),
+        (2, 2, 'A'),
+        (3, 3, 'C'),
+        (4, 4, 'B'),
+        (2, 3, None)  # 성적 아직 없음
+    ]
+    cursor.executemany('INSERT INTO enrollments (student_id, course_id, grade) VALUES (?, ?, ?)', enrollments)
+
+    cursor.execute('COMMIT;')
+except Exception as e:
+    print('트랜잭션 오류 발생:', e)
+    cursor.execute('ROLLBACK;')
+
+# 6. 뷰 생성: 전공별 학생 수
+cursor.execute('DROP VIEW IF EXISTS major_counts;')
+cursor.execute('''
+CREATE VIEW major_counts AS
+SELECT major, COUNT(*) AS student_count
+FROM students
+GROUP BY major
+''')
+
+# 7. 복잡한 쿼리 - 학생 이름, 전공, 수강 과목, 성적 보기 (조인 + 서브쿼리)
+query = '''
+SELECT s.name, s.major, c.name AS course, e.grade
+FROM students s
+LEFT JOIN enrollments e ON s.id = e.student_id
+LEFT JOIN courses c ON e.course_id = c.id
+ORDER BY s.name, c.name
+'''
+
+cursor.execute(query)
+print('학생별 수강 과목 및 성적:')
+for row in cursor.fetchall():
+    print(row)
+
+# 8. 전공별 학생 수 조회 (뷰 사용)
+cursor.execute('SELECT * FROM major_counts')
+print('\n전공별 학생 수:')
+for row in cursor.fetchall():
+    print(row)
+
+# 9. 평균 나이 계산 (서브쿼리)
+cursor.execute('SELECT AVG(age) FROM students')
+avg_age = cursor.fetchone()[0]
+print(f'\n학생 평균 나이: {avg_age:.2f}')
+
+# 10. 나이가 평균 이상인 학생 조회 (서브쿼리 활용)
+cursor.execute('''
+SELECT name, age FROM students
+WHERE age >= (SELECT AVG(age) FROM students)
+ORDER BY age DESC
+''')
+print('\n평균 나이 이상인 학생:')
+for row in cursor.fetchall():
+    print(row)
+
+# 종료
+cursor.close()
+conn.close()
